@@ -1,0 +1,38 @@
+# Dockerfile.wordpress
+ARG PHP_VERSION=8.2
+FROM wordpress:php${PHP_VERSION}-apache
+
+# Install additional PHP extensions and tools
+RUN apt-get update && apt-get install -y \
+    unzip \
+    mariadb-client \
+    default-mysql-client \
+    pv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install WP-CLI for search-replace operations
+RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+    && chmod +x wp-cli.phar \
+    && mv wp-cli.phar /usr/local/bin/wp
+
+# Ensure proper permissions
+RUN mkdir -p /var/www/html && chown -R www-data:www-data /var/www/html
+
+# Copy custom Apache config for larger uploads
+RUN echo "FileETag MTime Size\n\
+<IfModule mod_rewrite.c>\n\
+RewriteEngine On\n\
+RewriteBase /\n\
+RewriteRule ^index\\.php$ - [L]\n\
+RewriteCond %{REQUEST_FILENAME} !-f\n\
+RewriteCond %{REQUEST_FILENAME} !-d\n\
+RewriteRule . /index.php [L]\n\
+</IfModule>\n\
+\n\
+# Increase upload limits\n\
+php_value upload_max_filesize 512M\n\
+php_value post_max_size 512M\n\
+php_value max_execution_time 300\n\
+php_value max_input_time 300" > /var/www/html/.htaccess
+
+EXPOSE 80

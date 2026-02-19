@@ -1,0 +1,68 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: ${PROJECT_NAME:-wordpress}_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-wordpress}
+      MYSQL_USER: ${DB_USER:-wordpress}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-wordpress}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-rootpassword}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  wordpress:
+    build:
+      context: .
+      dockerfile: Dockerfile.wordpress
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.2}
+    container_name: ${PROJECT_NAME:-wordpress}_wp
+    restart: unless-stopped
+    ports:
+      - "${WP_PORT:-8080}:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: ${DB_NAME:-wordpress}
+      WORDPRESS_DB_USER: ${DB_USER:-wordpress}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD:-wordpress}
+      # Import configuration
+      IMPORT_ZIP_FILE: ${IMPORT_ZIP_FILE:-site-export.zip}
+      OLD_SITE_URL: ${OLD_SITE_URL:-}
+      NEW_SITE_URL: ${NEW_SITE_URL:-http://localhost:8080}
+      # Skip import if false
+      RUN_IMPORT: ${RUN_IMPORT:-true}
+    volumes:
+      - ./${IMPORT_ZIP_FILE:-site-export.zip}:/tmp/import.zip:ro
+      - wp_data:/var/www/html
+      - ./scripts:/usr/local/bin/custom-scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["/usr/local/bin/custom-scripts/entrypoint.sh"]
+
+  # Optional: phpMyAdmin for database management
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: ${PROJECT_NAME:-wordpress}_pma
+    restart: unless-stopped
+    ports:
+      - "${PMA_PORT:-8081}:80"
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+    depends_on:
+      - db
+
+volumes:
+  db_data:
+  wp_data:
