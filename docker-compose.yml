@@ -41,7 +41,7 @@ services:
       # Skip import if false
       RUN_IMPORT: ${RUN_IMPORT:-true}
     volumes:
-      - ./${IMPORT_ZIP_FILE:-site-export.zip}:/tmp/import.zip:ro
+      - ./:/imports:ro
       - wp_data:/var/www/html
       - ./scripts:/usr/local/bin/custom-scripts:ro
     depends_on:
