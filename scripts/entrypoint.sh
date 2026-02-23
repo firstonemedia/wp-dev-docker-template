@@ -3,7 +3,8 @@
 
 set -e
 
-ZIP_FILE="/tmp/import.zip"
+ZIP_FILE="${IMPORT_ZIP_FILE:-site-export.zip}"
+ZIP_FILE_PATH="/imports/${ZIP_FILE}"
 EXTRACT_DIR="/tmp/extracted"
 WP_ROOT="/var/www/html"
 
@@ -13,7 +14,13 @@ echo "=========================================="
 
 # Wait for database to be ready
 echo "⏳ Waiting for database connection..."
-until mysqladmin ping -h"$WORDPRESS_DB_HOST" --silent; do
+DB_HOST="${WORDPRESS_DB_HOST%%:*}"
+DB_PORT="${WORDPRESS_DB_HOST##*:}"
+if [ "$DB_HOST" = "$DB_PORT" ]; then
+    DB_PORT="3306"
+fi
+
+until mysqladmin ping -h"$DB_HOST" -P"$DB_PORT" --silent; do
     sleep 1
 done
 echo "✅ Database is ready!"
@@ -36,7 +43,7 @@ else
     
     # Handle ZIP import if specified
     if [ "$RUN_IMPORT" = "true" ] || [ "$RUN_IMPORT" = "force" ]; then
-        if [ -f "$ZIP_FILE" ]; then
+        if [ -f "$ZIP_FILE_PATH" ]; then
             echo "📦 Found import ZIP file"
             
             # Clean up previous extraction
@@ -45,7 +52,7 @@ else
             
             # Extract ZIP
             echo "📂 Extracting ZIP contents..."
-            unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
+            unzip -q "$ZIP_FILE_PATH" -d "$EXTRACT_DIR"
             
             # Find wp-content folder (might be nested)
             WP_CONTENT_SOURCE=$(find "$EXTRACT_DIR" -type d -name "wp-content" | head -n 1)
@@ -92,9 +99,9 @@ else
                 # Import database
                 echo "💾 Importing database..."
                 if [[ "$SQL_FILE" == *.gz ]]; then
-                    gunzip < "$SQL_FILE" | mysql -h"$WORDPRESS_DB_HOST" -u"$WORDPRESS_DB_USER" -p"$WORDPRESS_DB_PASSWORD" "$WORDPRESS_DB_NAME"
+                    gunzip < "$SQL_FILE" | mysql -h"$DB_HOST" -P"$DB_PORT" -u"$WORDPRESS_DB_USER" -p"$WORDPRESS_DB_PASSWORD" "$WORDPRESS_DB_NAME"
                 else
-                    mysql -h"$WORDPRESS_DB_HOST" -u"$WORDPRESS_DB_USER" -p"$WORDPRESS_DB_PASSWORD" "$WORDPRESS_DB_NAME" < "$SQL_FILE"
+                    mysql -h"$DB_HOST" -P"$DB_PORT" -u"$WORDPRESS_DB_USER" -p"$WORDPRESS_DB_PASSWORD" "$WORDPRESS_DB_NAME" < "$SQL_FILE"
                 fi
                 echo "✅ Database imported successfully"
                 
@@ -104,17 +111,7 @@ else
                 echo "🔄 URL Search & Replace"
                 echo "=========================================="
                 
-                # Interactive or ENV-based replacement
-                if [ -z "$OLD_SITE_URL" ] || [ -z "$NEW_SITE_URL" ]; then
-                    echo "Enter the OLD site URL (from the export):"
-                    read -r OLD_URL_INPUT
-                    echo "Enter the NEW site URL (this dev site):"
-                    read -r NEW_URL_INPUT
-                    
-                    OLD_SITE_URL="${OLD_URL_INPUT:-$OLD_SITE_URL}"
-                    NEW_SITE_URL="${NEW_URL_INPUT:-$NEW_SITE_URL}"
-                fi
-                
+                # Environment-based replacement only (non-interactive startup)
                 if [ -n "$OLD_SITE_URL" ] && [ -n "$NEW_SITE_URL" ]; then
                     echo "Replacing: $OLD_SITE_URL → $NEW_SITE_URL"
                     
@@ -138,8 +135,8 @@ else
             echo "🧹 Cleanup complete"
             
         else
-            echo "⚠️  Import ZIP not found at $ZIP_FILE"
-            echo "   Place your export ZIP as '$IMPORT_ZIP_FILE' in the project root"
+            echo "ℹ️  Import ZIP not found at $ZIP_FILE_PATH"
+            echo "   Skipping import; place your export ZIP in the project root and restart to import."
         fi
     fi
 fi
@@ -156,7 +153,7 @@ echo "🎉 WordPress is ready!"
 echo "=========================================="
 echo "Site URL: ${NEW_SITE_URL:-http://localhost:${WP_PORT:-8080}}"
 echo "Admin:    ${NEW_SITE_URL:-http://localhost:${WP_PORT:-8080}}/wp-admin"
-if [ -n "$PHP_MY_ADMIN_PORT" ]; then
+if [ -n "$PMA_PORT" ]; then
     echo "phpMyAdmin: http://localhost:${PMA_PORT:-8081}"
 fi
 echo "=========================================="
